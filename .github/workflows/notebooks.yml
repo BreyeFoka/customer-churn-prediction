@@ -1,0 +1,37 @@
+name: notebooks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install nbformat
+      # Validate each notebook and compile every code cell (shell and magic lines skipped).
+      # Training isn't re-run: it needs the datasets and, for the CNN, a GPU.
+      - name: Check notebooks
+        run: |
+          python - <<'PY'
+          import glob, sys, nbformat
+          failed = False
+          for path in glob.glob("**/*.ipynb", recursive=True):
+              nb = nbformat.read(path, as_version=4)
+              nbformat.validate(nb)
+              for i, cell in enumerate(nb.cells):
+                  if cell.cell_type != "code":
+                      continue
+                  src = "\n".join(l for l in cell.source.splitlines() if not l.lstrip().startswith(("!", "%")))
+                  try:
+                      compile(src, f"{path} cell {i}", "exec")
+                  except SyntaxError as e:
+                      print(f"::error file={path}::cell {i}: {e}")
+                      failed = True
+              print(f"ok {path}")
+          sys.exit(1 if failed else 0)
+          PY
